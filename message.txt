@@ -1,0 +1,160 @@
+from graph import Graph
+from VfyHalfIndependentSet import VfyHalfIndependentSet
+from ConvertCliqueToHalfIndependentSet import ConvertCliqueToHalfIndependentSet
+
+DEV = True
+VERBOSE = True
+
+#identifier for verbose output
+CNCtoHlfIS = 'VERBOSE: ConvertNodeCoverToHalfIndependentSet()'
+CNCtoHlfIS_d = 'DEV: ConvertNodeCoverToHalfIndependentSet()'
+
+neg_HlfIS_instance = 'a,c b,f c,d c,e c,f d,e d,f e,f' 
+
+# Convert a node cover instance to a clique instance.
+def ncToClique(nodes,edges,nc_size):
+
+    clique_edge_list = []
+    
+    ## Add the complement of clique_graph to the HlfIS graph 
+    #
+    for idx,node_1 in enumerate(nodes[:-1]):
+        for node_2 in nodes[idx+1:]:
+            edge = f'{node_1},{node_2}'
+            if f'{node_1},{node_2}' in edges or \
+               f'{node_1},{node_2}' in edges:
+                # edge is in node cover instance graph, so it's not
+                # in the complement of that graph
+                #
+                continue 
+            clique_edge_list.append(edge)
+
+    island_nodes = [] # Nodes connected to no others in graph complement
+    for node in nodes:
+        for c_edge in clique_edge_list:
+            n1,n2 = c_edge.split(',')
+            if node == n1 or node == n2:
+                break
+        else:
+            island_nodes.append(node)
+            
+    for i_node in island_nodes:
+        # Make edge from every loop back node to itself.
+        loop_edge = f'{i_node},{i_node}'
+        clique_edge_list.append(loop_edge)
+        if DEV: print(f'{CNCtoHlfIS_d} {loop_edge} added to graph complement')
+
+    clique_size = len(nodes) - nc_size
+    return  f"{' '.join(clique_edge_list)};{clique_size}"
+    
+def ConvertNodeCoverToHalfIndependentSet(nc_instance):
+    nc_graph, nc_size =  nc_instance.split(';')
+    try:
+        nc_size = int(nc_size)
+    except:
+        if VERBOSE:
+            print(f'{CNCtoHlfIS} node covering size "{nc_size}" not integer')
+            return neg_HlfIS_instance
+
+    if nc_size < 1:
+        if VERBOSE:
+            print(f'{CNCtoHlfIS} node covering size "{nc_size}" < 1')
+            return neg_HlfIS_instance
+
+    edges = nc_graph.split()
+    g = Graph(nc_instance,directed=False, weighted=False)
+    complement_nodes = list(g.nodes.keys())
+    l = len(complement_nodes) - nc_size
+    clique_instance = ncToClique(complement_nodes, edges, l)
+    his_instance = clique_instance
+
+
+    return his_instance
+
+C = ConvertNodeCoverToHalfIndependentSet
+vncvhis = 'VERBOSE: vfyNCViaVfyHalfIndependentSet(): '
+vncvhis_d = 'DEV: vfyNCViaVfyHalfIndependentSet(): '
+
+def vfyNCViaVfyHalfIndependentSet(nc_instance, S, H):
+    nc_graph, nc_size = nc_instance.split(';')
+    try: 
+        nc_size = int(nc_size)
+    except:
+        if VERBOSE:
+            print(f'{vncvhis}"{nc_size}" is not a valid int encoding')
+        return 'unsure'
+    g = Graph(nc_graph,directed=False, weighted=False)
+    nc_nodes = list(g.nodes.keys())
+
+    hint_nodes = H.split()
+    hlfIs_hint_nodes = set(nc_nodes) - set(hint_nodes)
+    hlfIs_hint_nodes = list(hlfIs_hint_nodes)
+    hlfIs_hint_nodes =  ' '.join(hlfIs_hint_nodes)  
+
+    hlfIS_instance = C(nc_instance)
+    g = Graph(hlfIS_instance,directed=False, weighted=False)
+    hlfIS_nodes = list(g.nodes.keys())
+    new_nodes = []
+
+    if len(hlfIS_nodes) > (2*len(hlfIs_hint_nodes)):
+        # add the new nodes that VfyHalfIndependentSet will expect
+        
+        for idx in range( len(hlfIS_nodes) - (2*len(hlfIs_hint_nodes)) ):
+            new_nodes.append(f'Z{idx}')
+    hlfIS_hint = f'{hlfIs_hint_nodes} {" ".join(new_nodes)}'
+    if DEV:
+        print(f'{vncvhis_d}hint for VfyHalfIndependentSet: "{hlfIS_hint}"')
+
+        return VfyHalfIndependentSet(hlfIS_instance, S, hlfIS_hint)            
+
+if __name__ == '__main__':
+    def test_case(F, I, S, H, expected, num, comment=''):
+        err = '** '
+        result = F(I, S, H)
+        func_name = str(F).split()[1]
+        func_call = f'{func_name}("{I}", "{S}", "{H}")'
+        if result == expected:
+            err = ''
+        e = expected
+        print(f'{err}test #{num} {func_call}: expected "{e}", received "{result}"')
+        print(f'test #{num} Explanation: {comment}\n')
+        return num + 1
+
+    F = vfyNCViaVfyHalfIndependentSet
+    num = 1
+
+    I = 'a,b a,c a,d a,e b,f;z'
+    exp = '"z" is not an encoding of a decimal integer'
+    num = test_case(F, I, 'yes', 'a f', 'unsure', num, exp)    
+
+    I = 'a,b a,c a,d a,e b,f;0'
+    exp = '|node cover subset| must be greater than 0'
+    num = test_case(F, I, 'yes', 'a f', 'unsure', num, exp)    
+
+    I = 'a,b a,c a,d a,e b,f;2'
+    exp = '{a f} is node cover'
+    num = test_case(F, I, 'yes', 'a f', 'correct', num, exp)
+
+    I = 'a,b a,c a,d a,e b,f b,g;2'
+    exp = '{a f} is not a node cover'
+    num = test_case(F, I, 'yes', 'a f', 'unsure', num, exp)
+
+    I = 'a,b b,c c,d d,e d,f;4'
+    exp = '{a b c d} is node cover'
+    num = test_case(F, I, 'yes', 'a b c d', 'correct', num, exp)
+
+    I = 'a,b a,c a,d a,e b,f b,g;4'
+    exp = '{a b c d } is not a node cover'
+    num = test_case(F, I, 'yes', 'a b c d', 'unsure', num, exp)
+
+    I = 'a,b b,c c,d d,e d,f;3'
+    exp = '|{a b c d}| > 3'
+    num = test_case(F, I, 'yes', 'a b c d', 'unsure', num, exp)
+    
+    I = 'a,b a,c;1'
+    exp = '{a} is a node cover'
+    num = test_case(F, I, 'yes', 'a', 'correct', num, exp)
+
+    I = 'a,b a,c;1'
+    exp = '{b} is not a node cover'
+    num = test_case(F, I, 'yes', 'b', 'unsure', num, exp)        
